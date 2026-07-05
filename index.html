@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>單字保衛戰</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        /* 避免在手機上長按選取文字 */
+        body {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            touch-action: manipulation;
+        }
+        
+        /* 按鍵的動畫與過渡效果 */
+        .key-btn {
+            transition: background-color 0.1s ease, transform 0.1s ease;
+        }
+        .key-btn:active {
+            transform: scale(0.95);
+        }
+        .key-error {
+            background-color: #ef4444 !important; /* Tailwind red-500 */
+            color: white !important;
+        }
+        
+        /* 單字掉落特效 */
+        .word-glow {
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+        .word-correct {
+            text-shadow: 0 0 15px rgba(74, 222, 128, 0.8);
+            transform: scale(1.1);
+            transition: all 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white font-sans h-screen w-screen overflow-hidden flex flex-col">
+
+    <!-- 上半部：遊戲資訊與單字掉落區 -->
+    <div class="flex-grow flex flex-col relative overflow-hidden" id="game-container">
+        
+        <!-- 狀態列 -->
+        <header class="flex justify-between items-center p-4 bg-gray-800/80 backdrop-blur-sm z-20 border-b border-gray-700">
+            <div class="text-xl font-bold tracking-wider flex items-center gap-2">
+                <span class="text-gray-400 text-sm">SCORE</span>
+                <span id="score-display" class="text-yellow-400 text-2xl">0</span>
+            </div>
+            <div id="lives-display" class="flex gap-1 text-2xl">
+                <span>❤️</span><span>❤️</span><span>❤️</span>
+            </div>
+        </header>
+
+        <!-- 掉落區塊 -->
+        <main id="drop-zone" class="flex-grow relative w-full"></main>
+
+        <!-- 遊戲開始 / 結束 遮罩 -->
+        <div id="overlay" class="absolute inset-0 bg-gray-900/90 z-30 flex flex-col items-center justify-center backdrop-blur-sm overflow-y-auto py-4">
+            <h1 id="overlay-title" class="text-5xl font-bold text-white mb-4 tracking-widest text-center">單字保衛戰</h1>
+            <p id="overlay-desc" class="text-gray-400 mb-6 text-center px-4">觀察掉落的單字，填入缺失的字母！<br>漏接或答錯太多次會扣除愛心喔。</p>
+            
+            <!-- 儲存分數區塊 (預設隱藏) -->
+            <div id="save-score-section" class="hidden flex-col items-center mb-6 w-full max-w-xs">
+                <input type="text" id="player-name" placeholder="輸入你的名字" class="w-full px-4 py-2 mb-2 rounded bg-gray-700 text-white border border-gray-600 focus:outline-none focus:border-blue-500 text-center" maxlength="10">
+                <button id="save-btn" class="w-full px-8 py-2 bg-green-600 hover:bg-green-500 rounded-full text-lg font-bold shadow-lg shadow-green-500/50 transition-transform hover:scale-105 active:scale-95">
+                    儲存分數
+                </button>
+            </div>
+
+            <button id="start-btn" class="px-8 py-3 bg-blue-600 hover:bg-blue-500 rounded-full text-xl font-bold shadow-lg shadow-blue-500/50 transition-transform hover:scale-105 active:scale-95 mb-8">
+                開始遊戲
+            </button>
+
+            <!-- 排行榜區塊 -->
+            <div class="bg-gray-800/80 p-4 rounded-lg border border-gray-700 flex flex-col items-center min-w-[250px]">
+                <h2 class="text-xl font-bold text-white mb-3 tracking-wider">🏆 排行榜 🏆</h2>
+                <ul id="leaderboard-list" class="flex flex-col gap-2 w-full">
+                    <li class="text-gray-500 text-sm text-center">載入中...</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- 下半部：虛擬鍵盤 -->
+    <div class="w-full bg-gray-800 border-t border-gray-700 p-2 pb-6 sm:pb-4 z-20 flex flex-col gap-2">
+        <div class="flex justify-center gap-1 sm:gap-2">
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="Q">Q</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="W">W</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="E">E</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="R">R</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="T">T</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="Y">Y</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="U">U</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="I">I</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="O">O</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="P">P</button>
+        </div>
+        <div class="flex justify-center gap-1 sm:gap-2 px-4 sm:px-6">
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="A">A</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="S">S</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="D">D</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="F">F</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="G">G</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="H">H</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="J">J</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="K">K</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="L">L</button>
+        </div>
+        <div class="flex justify-center gap-1 sm:gap-2 px-10 sm:px-14">
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="Z">Z</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="X">X</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="C">C</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="V">V</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="B">B</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="N">N</button>
+            <button class="key-btn w-full max-w-[40px] sm:max-w-[50px] h-12 sm:h-14 bg-gray-700 rounded text-lg font-bold shadow" data-key="M">M</button>
+        </div>
+    </div>
+
+    <script>
+        // 1. 遊戲資料：國小常見單字陣列 (至少 10 個)
+        const wordList = [
+            'APPLE', 'BANANA', 'TIGER', 'ORANGE', 'ANIMAL', 
+            'SCHOOL', 'FAMILY', 'MOTHER', 'PENCIL', 'STUDENT',
+            'RABBIT', 'WATER', 'COLOR', 'FRIEND', 'FLOWER'
+        ];
+
+        // 2. 遊戲狀態變數
+        let score = 0;
+        let lives = 3;
+        let isPlaying = false;
+        
+        let currentWordObj = null; // 當前掉落的單字物件
+        let animationFrameId = null;
+        let lastTime = 0;
+        
+        // 音效相關變數 (Tone.js Synths)
+        let synthsInitialized = false;
+        let correctSynth, wrongSynth, damageSynth, bgmSynth;
+
+        function initAudio() {
+            if (synthsInitialized) return;
+            
+            // 答對音效：清脆的高音
+            correctSynth = new Tone.Synth({
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.01, decay: 0.1, sustain: 0.05, release: 0.4 }
+            }).toDestination();
+            correctSynth.volume.value = -5;
+
+            // 答錯音效：短促的低音
+            wrongSynth = new Tone.Synth({
+                oscillator: { type: "sawtooth" },
+                envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 }
+            }).toDestination();
+            wrongSynth.volume.value = -10;
+
+            // 扣血音效：沉悶的打擊聲
+            damageSynth = new Tone.MembraneSynth().toDestination();
+            damageSynth.volume.value = -5;
+
+            // 遊戲狀態音效 (多重音，用於開始與結束)
+            bgmSynth = new Tone.PolySynth(Tone.Synth, {
+                envelope: { attack: 0.05, decay: 0.2, sustain: 0.2, release: 1 }
+            }).toDestination();
+            bgmSynth.volume.value = -8;
+
+            synthsInitialized = true;
+        }
+        
+        // 初始掉落速度 (像素/秒)
+        let baseSpeed = 80; 
+
+        // 3. DOM 元素
+        const dropZone = document.getElementById('drop-zone');
+        const scoreDisplay = document.getElementById('score-display');
+        const livesDisplay = document.getElementById('lives-display');
+        const overlay = document.getElementById('overlay');
+        const overlayTitle = document.getElementById('overlay-title');
+        const overlayDesc = document.getElementById('overlay-desc');
+        const startBtn = document.getElementById('start-btn');
+        const keys = document.querySelectorAll('.key-btn');
+
+        // 排行榜 DOM
+        const saveScoreSection = document.getElementById('save-score-section');
+        const playerNameInput = document.getElementById('player-name');
+        const saveBtn = document.getElementById('save-btn');
+        const leaderboardList = document.getElementById('leaderboard-list');
+
+        // 4. 初始化與遊戲流程控制
+        startBtn.addEventListener('click', startGame);
+
+        async function startGame() {
+            // 啟動 Tone.js 的 AudioContext (瀏覽器規定必須在使用者互動後啟動)
+            await Tone.start();
+            initAudio();
+            
+            // 隱藏儲存分數區塊，並將按鈕樣式重置
+            saveScoreSection.classList.add('hidden');
+            saveScoreSection.classList.remove('flex');
+            resetStartBtnStyle();
+            
+            // 播放開始音效 (C大三和弦)
+            bgmSynth.triggerAttackRelease(["C4", "E4", "G4", "C5"], "8n");
+
+            score = 0;
+            lives = 3;
+            baseSpeed = 80;
+            isPlaying = true;
+            
+            updateScore();
+            updateLives();
+            
+            overlay.classList.add('hidden');
+            dropZone.innerHTML = '';
+            
+            lastTime = performance.now();
+            spawnWord();
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function gameOver() {
+            isPlaying = false;
+            cancelAnimationFrame(animationFrameId);
+            
+            // 播放遊戲結束音效 (下降哀傷旋律)
+            if (synthsInitialized) {
+                const now = Tone.now();
+                bgmSynth.triggerAttackRelease("G3", "4n", now);
+                bgmSynth.triggerAttackRelease("Eb3", "4n", now + 0.4);
+                bgmSynth.triggerAttackRelease("C3", "2n", now + 0.8);
+            }
+            
+            if (currentWordObj && currentWordObj.element) {
+                currentWordObj.element.remove();
+            }
+            currentWordObj = null;
+
+            overlayTitle.textContent = "Game Over";
+            overlayTitle.classList.replace('text-white', 'text-red-500');
+            overlayDesc.textContent = `你的最終得分是：${score} 分！`;
+            
+            // 如果有得分，顯示儲存分數區塊
+            if (score > 0) {
+                saveScoreSection.classList.remove('hidden');
+                saveScoreSection.classList.add('flex');
+                startBtn.textContent = "跳過並重玩";
+                startBtn.classList.replace('bg-blue-600', 'bg-gray-600');
+                startBtn.classList.replace('hover:bg-blue-500', 'hover:bg-gray-500');
+                startBtn.classList.replace('shadow-blue-500/50', 'shadow-gray-500/50');
+            } else {
+                startBtn.textContent = "再玩一次";
+                resetStartBtnStyle();
+            }
+
+            overlay.classList.remove('hidden');
+            updateLeaderboardUI();
+        }
+
+        // 輔助函式：重置開始按鈕樣式
+        function resetStartBtnStyle() {
+            if (startBtn.classList.contains('bg-gray-600')) {
+                startBtn.classList.replace('bg-gray-600', 'bg-blue-600');
+                startBtn.classList.replace('hover:bg-gray-500', 'hover:bg-blue-500');
+                startBtn.classList.replace('shadow-gray-500/50', 'shadow-blue-500/50');
+            }
+        }
+
+        // 5. 單字生成邏輯
+        function spawnWord() {
+            if (!isPlaying) return;
+
+            // 隨機選一個單字
+            const word = wordList[Math.floor(Math.random() * wordList.length)];
+            // 隨機隱藏一個字母
+            const missingIndex = Math.floor(Math.random() * word.length);
+            
+            // 建立顯示字串 (例如 A _ P L E)
+            const displayChars = word.split('').map((char, index) => {
+                return index === missingIndex ? '_' : char;
+            });
+
+            // 建立 DOM 元素
+            const wordEl = document.createElement('div');
+            wordEl.className = 'absolute text-4xl sm:text-5xl font-bold tracking-widest text-white word-glow';
+            wordEl.textContent = displayChars.join(' ');
+            
+            // 將元素加入容器以取得實際寬度
+            dropZone.appendChild(wordEl);
+            
+            // 隨機計算 X 座標 (避免超出邊界)
+            const zoneWidth = dropZone.clientWidth;
+            const wordWidth = wordEl.clientWidth;
+            const maxX = Math.max(0, zoneWidth - wordWidth - 20);
+            const randomX = Math.floor(Math.random() * maxX) + 10;
+            
+            wordEl.style.left = `${randomX}px`;
+            wordEl.style.top = `-50px`; // 從畫面上方開始掉
+
+            currentWordObj = {
+                word: word,
+                missingIndex: missingIndex,
+                missingChar: word[missingIndex],
+                element: wordEl,
+                y: -50,
+                isResolved: false
+            };
+        }
+
+        // 6. 遊戲主迴圈 (處理平滑掉落)
+        function gameLoop(currentTime) {
+            if (!isPlaying) return;
+
+            const deltaTime = (currentTime - lastTime) / 1000; // 轉換為秒
+            lastTime = currentTime;
+
+            if (currentWordObj && !currentWordObj.isResolved) {
+                // 隨著分數增加，稍微加快速度
+                const currentSpeed = baseSpeed + (score * 0.5);
+                
+                currentWordObj.y += currentSpeed * deltaTime;
+                currentWordObj.element.style.top = `${currentWordObj.y}px`;
+
+                // 檢查是否掉到底部 (超出容器高度)
+                const zoneHeight = dropZone.clientHeight;
+                const wordHeight = currentWordObj.element.clientHeight;
+
+                if (currentWordObj.y > zoneHeight - wordHeight) {
+                    // 漏接！扣血
+                    takeDamage();
+                    
+                    // 檢查 currentWordObj 是否還存在（若 takeDamage 觸發了 gameOver，它會被設為 null）
+                    if (currentWordObj) {
+                        currentWordObj.element.remove();
+                        currentWordObj = null;
+                    }
+                    
+                    if (isPlaying) {
+                        spawnWord();
+                    }
+                }
+            }
+
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // 7. 扣血機制
+        function takeDamage() {
+            lives--;
+            updateLives();
+            
+            // 播放扣血打擊音效
+            if (synthsInitialized) {
+                damageSynth.triggerAttackRelease("C2", "8n");
+            }
+
+            // 畫面震動或紅光特效 (UX回饋)
+            dropZone.classList.add('bg-red-900/30');
+            setTimeout(() => {
+                dropZone.classList.remove('bg-red-900/30');
+            }, 200);
+
+            if (lives <= 0) {
+                gameOver();
+            }
+        }
+
+        // 8. 更新 UI 顯示
+        function updateScore() {
+            scoreDisplay.textContent = score;
+        }
+
+        function updateLives() {
+            // 愛心破裂或變灰
+            let heartsHTML = '';
+            for (let i = 0; i < 3; i++) {
+                if (i < lives) {
+                    heartsHTML += '<span>❤️</span>';
+                } else {
+                    heartsHTML += '<span class="grayscale opacity-50">💔</span>'; // 碎裂且灰階的愛心
+                }
+            }
+            livesDisplay.innerHTML = heartsHTML;
+        }
+
+        // 9. 輸入處理邏輯
+        function handleInput(char) {
+            if (!isPlaying || !currentWordObj || currentWordObj.isResolved) return;
+
+            const inputChar = char.toUpperCase();
+
+            if (inputChar === currentWordObj.missingChar) {
+                // 答對了！
+                currentWordObj.isResolved = true;
+                
+                // 播放答對音效 (清脆高音)
+                if (synthsInitialized) {
+                    correctSynth.triggerAttackRelease("C6", "16n");
+                }
+                
+                // 顯示完整單字並變綠色
+                const fullWordSpaced = currentWordObj.word.split('').join(' ');
+                currentWordObj.element.textContent = fullWordSpaced;
+                currentWordObj.element.classList.replace('text-white', 'text-green-400');
+                currentWordObj.element.classList.add('word-correct');
+                
+                score += 10;
+                updateScore();
+
+                // 暫停一下讓玩家看清楚完整的字，再消失
+                setTimeout(() => {
+                    if (currentWordObj && currentWordObj.element) {
+                        currentWordObj.element.remove();
+                        currentWordObj = null;
+                        if (isPlaying) spawnWord();
+                    }
+                }, 400); 
+
+            } else {
+                // 答錯了：虛擬鍵盤閃爍紅光
+                // 播放答錯音效 (低頻短音)
+                if (synthsInitialized) {
+                    wrongSynth.triggerAttackRelease("G2", "16n");
+                }
+                flashErrorKey(inputChar);
+            }
+        }
+
+        function flashErrorKey(char) {
+            const btn = document.querySelector(`button[data-key="${char}"]`);
+            if (btn) {
+                btn.classList.add('key-error');
+                setTimeout(() => {
+                    btn.classList.remove('key-error');
+                }, 200);
+            }
+        }
+
+        // 10. 事件綁定
+        // 虛擬鍵盤點擊
+        keys.forEach(keyBtn => {
+            keyBtn.addEventListener('click', () => {
+                const char = keyBtn.getAttribute('data-key');
+                handleInput(char);
+                // 讓點擊虛擬鍵盤時也有按下的視覺效果
+                keyBtn.classList.add('bg-gray-600');
+                setTimeout(() => keyBtn.classList.remove('bg-gray-600'), 100);
+            });
+        });
+
+        // 實體鍵盤按下
+        window.addEventListener('keydown', (e) => {
+            // 確保按下的鍵是 A-Z 字母
+            if (/^[a-zA-Z]$/.test(e.key)) {
+                handleInput(e.key);
+                
+                // 讓對應的虛擬鍵盤也亮起，增強 UX
+                const btn = document.querySelector(`button[data-key="${e.key.toUpperCase()}"]`);
+                if (btn && !btn.classList.contains('key-error')) {
+                    btn.classList.add('bg-gray-500');
+                    setTimeout(() => btn.classList.remove('bg-gray-500'), 100);
+                }
+            }
+        });
+
+        // 11. 排行榜 (localStorage) 邏輯
+        const LEADERBOARD_KEY = 'wordDefenderLeaderboard';
+        const MAX_LEADERBOARD_ENTRIES = 5;
+
+        function getLeaderboard() {
+            const data = localStorage.getItem(LEADERBOARD_KEY);
+            return data ? JSON.parse(data) : [];
+        }
+
+        function saveToLeaderboard(name, scoreToSave) {
+            const board = getLeaderboard();
+            board.push({ name, score: scoreToSave });
+            // 依分數遞減排序
+            board.sort((a, b) => b.score - a.score);
+            // 只保留前 N 名
+            board.splice(MAX_LEADERBOARD_ENTRIES);
+            localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(board));
+        }
+
+        function updateLeaderboardUI() {
+            const board = getLeaderboard();
+            if (board.length === 0) {
+                leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center py-2">尚無紀錄</li>';
+                return;
+            }
+            leaderboardList.innerHTML = board.map((entry, idx) => {
+                const isTop1 = idx === 0;
+                return `<li class="flex justify-between items-center w-full px-3 py-2 ${isTop1 ? 'text-yellow-400 font-bold bg-yellow-400/10 rounded' : 'text-gray-300'} border-b border-gray-700/50 last:border-0">
+                    <span><span class="mr-2 opacity-70">${idx + 1}.</span> ${entry.name}</span>
+                    <span class="font-mono text-lg">${entry.score}</span>
+                </li>`;
+            }).join('');
+        }
+
+        // 儲存分數按鈕點擊事件
+        saveBtn.addEventListener('click', () => {
+            const nameInput = playerNameInput.value.trim() || '無名英雄';
+            saveToLeaderboard(nameInput, score);
+            
+            // 隱藏輸入區塊並重置按鈕
+            saveScoreSection.classList.add('hidden');
+            saveScoreSection.classList.remove('flex');
+            playerNameInput.value = '';
+            
+            startBtn.textContent = "再玩一次";
+            resetStartBtnStyle();
+            
+            // 避免重複儲存，將當前分數歸零
+            score = 0; 
+            
+            updateLeaderboardUI();
+        });
+
+        // 初始載入排行榜
+        updateLeaderboardUI();
+
+    </script>
+</body>
+</html>
